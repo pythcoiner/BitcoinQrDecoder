@@ -1,6 +1,4 @@
-// use std::fmt::format;
 #[cfg(test)]
-
 use regex::Regex;
 
 /// Struct holding a chunk of MultiQR
@@ -19,7 +17,6 @@ enum QRType {
 
 /// A generic Trait for QRData Containers (single/multi QR)
 trait QR {
-    // fn load(&mut self, data: &String);
     fn data_init(&mut self, sequences: usize);
     fn append(&mut self, data: &String) -> bool;
 }
@@ -42,7 +39,7 @@ struct QRData {
     current: usize,
     data_stack: Vec<Option<String>>,
     chunks: Vec<Option<MultiQRElement>>,
-    max_len: usize ,
+    max_len: usize,
 }
 
 impl QRData {
@@ -61,7 +58,6 @@ impl QRData {
             max_len: 0,
         }
     }
-
 }
 
 impl QR for QRData {
@@ -84,7 +80,6 @@ impl QR for QRData {
         self.is_loaded = true;
         true
     }
-    
 }
 
 impl MultiQR for QRData {
@@ -96,7 +91,7 @@ impl MultiQR for QRData {
             }
         }
         self.sequences_count = fill_sequences;
-        if fill_sequences == self.total_sequences{
+        if fill_sequences == self.total_sequences {
             self.is_completed = true;
         }
     }
@@ -107,31 +102,30 @@ impl MultiQR for QRData {
                 self.current = 0;
             }
             if let Some(result) = &self.data_stack[self.current] {
-                let a  = (self.current + 1).to_string();
+                let a = (self.current + 1).to_string();
                 let b = self.total_sequences.to_string();
-                let c = "p".to_string() + &a + &"of".to_string() +  &b + &" ".to_string();
+                let c = "p".to_string() + &a + &"of".to_string() + &b + &" ".to_string();
                 let d = result;
                 let out = c + d;
                 self.current += 1;
                 Ok(out)
-            } else {Err("data_stack element is None".to_string())}
-
+            } else {
+                Err("data_stack element is None".to_string())
+            }
         } else {
             Err("QRData not yet loaded!".to_string())
         }
     }
-
 }
-
 
 /// Trait for decoders
 trait Decode {
     /// return the pattern(regex) used for detect each type (decoder)
     fn pattern() -> &'static str;
     /// return true if decoding process ended (decoder)
-    fn is_complete(& self) -> bool;
+    fn is_complete(&self) -> bool;
     /// load data chunk (decoder)
-    fn append(&mut self,data: &str) -> Result<bool, String>;
+    fn append(&mut self, data: &str) -> Result<bool, String>;
     /// decoding process (decoder)
     fn process(&mut self);
 }
@@ -145,14 +139,14 @@ trait Encode {
 }
 
 /// A decoder for Specter MultiQR
-struct SpecterQR{
+struct SpecterQR {
     data: QRData,
 }
 
-impl SpecterQR{
-    fn new() -> SpecterQR{
+impl SpecterQR {
+    fn new() -> SpecterQR {
         let data = QRData::new();
-        SpecterQR{data}
+        SpecterQR { data }
     }
 }
 
@@ -160,11 +154,11 @@ impl Decode for SpecterQR {
     fn pattern() -> &'static str {
         r"^p\d+of\d+\s"
     }
-    fn is_complete(& self) -> bool {
+    fn is_complete(&self) -> bool {
         self.data.is_completed
     }
     fn append(&mut self, raw_data: &str) -> Result<bool, String> {
-        if SpecterQR::is_multi(raw_data){
+        if SpecterQR::is_multi(raw_data) {
             // header pattern
             let regex = Regex::new(SpecterQR::pattern()).unwrap();
 
@@ -173,7 +167,7 @@ impl Decode for SpecterQR {
 
             //fetch header
             let mut header: String = "".to_string();
-            if let Some(found) = regex.find(raw_data){
+            if let Some(found) = regex.find(raw_data) {
                 let found = found.as_str().to_string();
                 header = found;
             };
@@ -181,28 +175,34 @@ impl Decode for SpecterQR {
 
             // index
             let index: usize;
-            let a = parts[0].replace("p", "")
-                .parse::<usize>();
+            let a = parts[0].replace("p", "").parse::<usize>();
             match a {
                 Ok(value) => {
-                    if value > 0{
+                    if value > 0 {
                         index = value;
-                    } else {return Err("Index cannot be 0!".to_string());}
+                    } else {
+                        return Err("Index cannot be 0!".to_string());
+                    }
                 }
-                Err(e) => {return Err(e.to_string());}
+                Err(e) => {
+                    return Err(e.to_string());
+                }
             }
 
             // total
             let total: usize;
-            let b = parts[1].trim()
-                .parse::<usize>();
+            let b = parts[1].trim().parse::<usize>();
             match b {
                 Ok(value) => {
                     if value > 1 {
                         total = value;
-                    } else {return Err("Total might be > 1!".to_string());}
+                    } else {
+                        return Err("Total might be > 1!".to_string());
+                    }
                 }
-                Err(e) => { return Err(e.to_string());}
+                Err(e) => {
+                    return Err(e.to_string());
+                }
             }
 
             // if first append
@@ -212,9 +212,13 @@ impl Decode for SpecterQR {
 
             // load element to the right position
             let d2 = data.clone();
-            let element = MultiQRElement{data: d2, index, total };
+            let element = MultiQRElement {
+                data: d2,
+                index,
+                total,
+            };
 
-            let idx = index -1;
+            let idx = index - 1;
 
             // check if this chunk already loaded
             match &self.data.chunks[idx] {
@@ -233,13 +237,14 @@ impl Decode for SpecterQR {
             self.process();
 
             Ok(true)
+        } else {
+            Err("data is not MultiQR type!".to_string())
         }
-        else { Err("data is not MultiQR type!".to_string()) }
     }
     fn process(&mut self) {
         let mut buffer = String::new();
         // for each element of data chunks
-        for i in &self.data.chunks{
+        for i in &self.data.chunks {
             match i {
                 Some(result) => {
                     buffer += &result.data;
@@ -248,12 +253,10 @@ impl Decode for SpecterQR {
                     self.data.is_completed = false;
                     return;
                 }
-
             }
         }
         self.data.data = buffer;
         self.data.is_completed = true;
-
     }
 }
 
@@ -299,7 +302,9 @@ impl Encode for SpecterQR {
                 out.data_stack.push(option);
 
                 // stop when buffer empty
-                if buff.len() == 0 { end = true;}
+                if buff.len() == 0 {
+                    end = true;
+                }
             }
         } else {
             QR::data_init(&mut out, 1);
@@ -310,27 +315,23 @@ impl Encode for SpecterQR {
     }
 }
 
-fn main() {
-
-
-}
+fn main() {}
 
 #[test]
 fn test_specter_iterate_qr() {
     let qr = SpecterQR::from_string("012345678901234567890123456789012345678", 13);
 
     let s = qr.data_stack.len().to_string();
-    for i in qr.data_stack{
+    for i in qr.data_stack {
         match i {
             Some(result) => {
                 println!("{result}")
-            },
+            }
             None => {
                 println!("None")
-            },
+            }
         }
     }
-
 }
 
 #[test]
@@ -345,16 +346,14 @@ fn test_specter_datastack_qr() {
     assert_eq!(data[0], Some("0123456789012".to_string()));
     assert_eq!(data[1], Some("3456789012345".to_string()));
     assert_eq!(data[2], Some("6789012345678".to_string()));
-
 }
 
 #[test]
-fn test_specter_next_qr(){
+fn test_specter_next_qr() {
     let mut qr = SpecterQR::from_string("012345678901234567890123456789012345678", 13);
     let a = qr.next().unwrap();
     let b = qr.next().unwrap();
     let c = qr.next().unwrap();
-
 
     assert_eq!(a, "p1of3 0123456789012".to_string());
     assert_eq!(b, "p2of3 3456789012345".to_string());
@@ -362,21 +361,21 @@ fn test_specter_next_qr(){
 }
 
 #[test]
-fn test_specter_is_multi(){
+fn test_specter_is_multi() {
     let data = "p1of3 jsdgkjdrghlkjkmj".to_string();
     let out = SpecterQR::is_multi(&data);
     assert!(out)
 }
 
 #[test]
-fn test_specter_is_multi_false(){
+fn test_specter_is_multi_false() {
     let data = "jsdgkjdrghlkjkmj".to_string();
     let out = SpecterQR::is_multi(&data);
     assert!(!out)
 }
 
 #[test]
-fn test_append_specter_multi(){
+fn test_append_specter_multi() {
     let mut multi = SpecterQR::new();
 
     Decode::append(&mut multi, "p0of3 a");
@@ -388,10 +387,4 @@ fn test_append_specter_multi(){
 
     assert!(multi.is_complete());
     assert_eq!(multi.data.data, "abc".to_string());
-
 }
-
-
-
-
-
