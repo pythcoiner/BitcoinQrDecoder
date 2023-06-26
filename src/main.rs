@@ -1,5 +1,6 @@
 #[cfg(test)]
 use regex::Regex;
+use crate::QRType::{SimpleQR, Specter};
 
 /// Struct holding a chunk of MultiQR
 #[derive(Clone)]
@@ -11,8 +12,11 @@ struct MultiQRElement {
 
 /// QR Type
 enum QRType {
-    QRType,
-    MultiQRType,
+    SimpleQR(QRData),
+    Specter(SpecterQR),
+    UrBytes,
+    UrPSBT,
+    NoType,
 }
 
 /// A generic Trait for QRData Containers (single/multi QR)
@@ -29,7 +33,6 @@ trait MultiQR {
 
 /// A Generic container for QRCode data
 struct QRData {
-    qr_type: QRType,
     data: String,
     total_sequences: usize,
     sequences_count: usize,
@@ -45,7 +48,6 @@ struct QRData {
 impl QRData {
     fn new() -> QRData {
         QRData {
-            qr_type: QRType::QRType,
             data: String::new(),
             total_sequences: 0,
             sequences_count: 0,
@@ -315,6 +317,41 @@ impl Encode for SpecterQR {
     }
 }
 
+/// A generic QRCode Encoder
+struct  QREncoder {
+    encoder: QRType,
+}
+
+impl QREncoder {
+    fn new() -> QREncoder {
+        let encoder = QRType::NoType;
+        QREncoder{encoder}
+    }
+    /// load (String) data into a given QRType with a given max(max_len) length of chunks
+    fn load(& mut self, data: &str, qr_type: QRType, max_len: usize) -> Result<bool, String> {
+        match qr_type {
+            Specter(specter_qr) => {
+                // if multi => return a SpecterQR
+                if data.len() > max_len {
+                let mut specter_qr = SpecterQR::new();
+                let encoded_data = <SpecterQR as Encode>::from_string(data, max_len);
+                specter_qr.data = encoded_data;
+                self.encoder = Specter(specter_qr);
+                Ok(true)
+                // else return a QRData
+                } else {
+                    let mut simple_qr = QRData::new();
+                    QR::append(&mut simple_qr, &data.to_string());
+                    self.encoder = SimpleQR(simple_qr);
+                    Ok(true)
+                }
+            }
+            _ => {Err("Type not yet implemented!".to_string())}
+        }
+    }
+
+}
+
 fn main() {}
 
 #[test]
@@ -387,4 +424,10 @@ fn test_append_specter_multi() {
 
     assert!(multi.is_complete());
     assert_eq!(multi.data.data, "abc".to_string());
+}
+
+#[test]
+fn qr_encoder_load() {
+    let mut qr_encoder = QREncoder::new();
+    qr_encoder.load("213216546842lkljbjkhbvhgv5654", Specter(SpecterQR::new()), 13).unwrap();
 }
