@@ -1,4 +1,4 @@
-#[cfg(test)]
+
 use regex::Regex;
 use crate::QRType::{SimpleQR, Specter};
 
@@ -330,7 +330,7 @@ impl QREncoder {
     /// load (String) data into a given QRType with a given max(max_len) length of chunks
     fn load(& mut self, data: &str, qr_type: QRType, max_len: usize) -> Result<bool, String> {
         match qr_type {
-            Specter(specter_qr) => {
+            Specter(_) => {
                 // if multi => return a SpecterQR
                 if data.len() > max_len {
                 let mut specter_qr = SpecterQR::new();
@@ -352,13 +352,14 @@ impl QREncoder {
 
 }
 
-fn main() {}
+
+#[cfg(test)]
 
 #[test]
 fn test_specter_iterate_qr() {
     let qr = SpecterQR::from_string("012345678901234567890123456789012345678", 13);
 
-    let s = qr.data_stack.len().to_string();
+    let _s = qr.data_stack.len().to_string();
     for i in qr.data_stack {
         match i {
             Some(result) => {
