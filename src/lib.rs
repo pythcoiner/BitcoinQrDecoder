@@ -1,355 +1,177 @@
+#![cfg_attr(debug_assertions, allow(unused))]
 
-use regex::Regex;
-use crate::QRType::{SimpleQR, Specter};
+extern crate bitcoin;
+
+use std::str::FromStr;
+use crate::QRType::*;
+use crate::qr::*;
+use crate::specter::SpecterQR;
+use bitcoin::psbt::PartiallySignedTransaction as Psbt;
+use bitcoin::bip32::{ExtendedPubKey as XPub, ExtendedPrivKey as XPriv};
+use liana::descriptors::LianaDescriptor as Descriptor ;
+use crate::Error::ParsingError;
+
+#[derive(Debug)]
+pub enum Error {
+    EncodingError(String),
+    DecodingError(String),
+    ParsingError(String),
+    NotImplementedError(String),
+}
+
+
+pub mod qr;
+pub mod specter;
+pub mod ur;
 
 /// Struct holding a chunk of MultiQR
-#[derive(Clone)]
-struct MultiQRElement {
+#[derive(Debug, Clone)]
+pub struct MultiQRElement {
     data: String,
     index: usize,
     total: usize,
 }
 
+/// Data Type
+#[derive(Debug, Clone)]
+pub enum DataType {
+    Psbt(Option<Psbt>),
+    Xpub(Option<XPub>),
+    Xpriv(Option<XPriv>),
+    Descriptor(Option<Descriptor>),
+}
+
 /// QR Type
-enum QRType {
+#[derive(Debug, Clone)]
+pub enum QRType {
     SimpleQR(QRData),
+    Psbt,
+    Xpriv,
+    Xpub,
+    Descriptor,
     Specter(SpecterQR),
+    SpecterPsbt(),
+    SpecterDescriptor,
+    Ur,
     UrBytes,
-    UrPSBT,
+    UrPsbt,
+    UrXpub,
+    UrXpriv,
+    UrDescriptor,
     NoType,
 }
 
 /// A generic Trait for QRData Containers (single/multi QR)
-trait QR {
+pub trait QR {
     fn data_init(&mut self, sequences: usize);
-    fn append(&mut self, data: &String) -> bool;
+    fn receive(&mut self, data: &String) -> bool;
 }
 
 ///A generic trait for QRData Containers (multi)
-trait MultiQR {
+pub trait MultiQR {
     fn check_complete(&mut self);
     fn next(&mut self) -> Result<String, String>;
 }
 
-/// A Generic container for QRCode data
-struct QRData {
-    data: String,
-    total_sequences: usize,
-    sequences_count: usize,
-    is_completed: bool,
-    is_loaded: bool,
-    is_init: bool,
-    current: usize,
-    data_stack: Vec<Option<String>>,
-    chunks: Vec<Option<MultiQRElement>>,
-    max_len: usize,
-}
-
-impl QRData {
-    fn new() -> QRData {
-        QRData {
-            data: String::new(),
-            total_sequences: 0,
-            sequences_count: 0,
-            is_completed: false,
-            is_loaded: false,
-            is_init: false,
-            current: 0,
-            data_stack: vec![],
-            chunks: vec![],
-            max_len: 0,
-        }
-    }
-}
-
-impl QR for QRData {
-    ///  Initialize QRData Container
-    ///
-    fn data_init(&mut self, sequences: usize) {
-        self.total_sequences = sequences;
-        self.sequences_count = 0;
-        self.current = sequences;
-        self.is_loaded = true;
-    }
-
-    ///  Append data from a single QRCode received without formatting
-    ///
-    fn append(&mut self, data: &String) -> bool {
-        self.data = data.clone();
-        self.sequences_count = 1;
-        self.total_sequences = 1;
-        self.current = 1;
-        self.is_loaded = true;
-        true
-    }
-}
-
-impl MultiQR for QRData {
-    fn check_complete(&mut self) {
-        let mut fill_sequences: usize = 0;
-        for sequence in &self.data_stack {
-            if let Some(_result) = sequence {
-                fill_sequences += 1;
-            }
-        }
-        self.sequences_count = fill_sequences;
-        if fill_sequences == self.total_sequences {
-            self.is_completed = true;
-        }
-    }
-
-    fn next(&mut self) -> Result<String, String> {
-        if self.is_loaded {
-            if self.current >= self.total_sequences {
-                self.current = 0;
-            }
-            if let Some(result) = &self.data_stack[self.current] {
-                let a = (self.current + 1).to_string();
-                let b = self.total_sequences.to_string();
-                let c = "p".to_string() + &a + &"of".to_string() + &b + &" ".to_string();
-                let d = result;
-                let out = c + d;
-                self.current += 1;
-                Ok(out)
-            } else {
-                Err("data_stack element is None".to_string())
-            }
-        } else {
-            Err("QRData not yet loaded!".to_string())
-        }
-    }
-}
-
 /// Trait for decoders
-trait Decode {
+pub trait Decode {
     /// return the pattern(regex) used for detect each type (decoder)
     fn pattern() -> &'static str;
     /// return true if decoding process ended (decoder)
     fn is_complete(&self) -> bool;
     /// load data chunk (decoder)
-    fn append(&mut self, data: &str) -> Result<bool, String>;
+    fn receive(&mut self, data: &str) -> Result<bool, String>;
     /// decoding process (decoder)
     fn process(&mut self);
+
+    fn result() -> Result<DataType, Error>;
 }
 
 /// Trait for encoders
-trait Encode {
+pub trait Encode {
     /// return whether the string is a multiQR or not (encoder)
     fn is_multi(data: &str) -> bool;
     /// encode data from string (encoder)
-    fn from_string(data: &str, max_len: usize) -> QRData;
+    fn load_string(&mut self, data: &str, max_len: usize) -> Result<QRData, Error>;
+
+    fn from_psbt(psbt: &Psbt) -> QRType;
+
+    fn from_xpub(xpub: &XPub) -> QRType;
+
+    fn from_xpriv(xpriv: &XPriv) -> QRType;
+
+    fn from_descriptor(descriptor: &Descriptor) -> QRType;
 }
 
-/// A decoder for Specter MultiQR
-struct SpecterQR {
-    data: QRData,
-}
-
-impl SpecterQR {
-    fn new() -> SpecterQR {
-        let data = QRData::new();
-        SpecterQR { data }
-    }
-}
-
-impl Decode for SpecterQR {
-    fn pattern() -> &'static str {
-        r"^p\d+of\d+\s"
-    }
-    fn is_complete(&self) -> bool {
-        self.data.is_completed
-    }
-    fn append(&mut self, raw_data: &str) -> Result<bool, String> {
-        if SpecterQR::is_multi(raw_data) {
-            // header pattern
-            let regex = Regex::new(SpecterQR::pattern()).unwrap();
-
-            // fetch data
-            let data = regex.replace_all(raw_data, "".to_string()).to_string();
-
-            //fetch header
-            let mut header: String = "".to_string();
-            if let Some(found) = regex.find(raw_data) {
-                let found = found.as_str().to_string();
-                header = found;
-            };
-            let parts: Vec<&str> = header.split("of").collect();
-
-            // index
-            let index: usize;
-            let a = parts[0].replace("p", "").parse::<usize>();
-            match a {
-                Ok(value) => {
-                    if value > 0 {
-                        index = value;
-                    } else {
-                        return Err("Index cannot be 0!".to_string());
-                    }
-                }
-                Err(e) => {
-                    return Err(e.to_string());
-                }
-            }
-
-            // total
-            let total: usize;
-            let b = parts[1].trim().parse::<usize>();
-            match b {
-                Ok(value) => {
-                    if value > 1 {
-                        total = value;
-                    } else {
-                        return Err("Total might be > 1!".to_string());
-                    }
-                }
-                Err(e) => {
-                    return Err(e.to_string());
-                }
-            }
-
-            // if first append
-            if self.data.chunks.len() == 0 {
-                self.data.chunks = vec![None; total];
-            }
-
-            // load element to the right position
-            let d2 = data.clone();
-            let element = MultiQRElement {
-                data: d2,
-                index,
-                total,
-            };
-
-            let idx = index - 1;
-
-            // check if this chunk already loaded
-            match &self.data.chunks[idx] {
-                None => {
-                    // load the chunk
-                    self.data.chunks[idx] = Some(element);
-                }
-                Some(value) => {
-                    // check if loaded & actual value match
-                    if value.data != data {
-                        return Err("Value and data are different!".to_string());
-                    }
-                }
-            }
-
-            self.process();
-
-            Ok(true)
-        } else {
-            Err("data is not MultiQR type!".to_string())
-        }
-    }
-    fn process(&mut self) {
-        let mut buffer = String::new();
-        // for each element of data chunks
-        for i in &self.data.chunks {
-            match i {
-                Some(result) => {
-                    buffer += &result.data;
-                }
-                None => {
-                    self.data.is_completed = false;
-                    return;
-                }
-            }
-        }
-        self.data.data = buffer;
-        self.data.is_completed = true;
-    }
-}
-
-impl Encode for SpecterQR {
-    fn is_multi(data: &str) -> bool {
-        let re: Regex = Regex::new(SpecterQR::pattern()).unwrap();
-        re.is_match(data)
-    }
-    fn from_string(data: &str, max_len: usize) -> QRData {
-        let mut out = QRData::new();
-
-        out.max_len = max_len;
-        out.data = data.to_string();
-
-        // if multi
-        if data.len() > max_len {
-            let mut end: bool = false;
-            let mut buff = data.to_string();
-
-            //data.len() > max_len : split and load
-            while !end {
-                //if len(data) > max_len : return (chunk, data) else return (data, None)
-                let (sequence, data) = if buff.len() > 0 {
-                    if buff.len() > max_len {
-                        let (sequence, data) = buff.split_at(max_len);
-                        // (chunk, data)
-                        (sequence.to_owned().to_string(), data.to_owned().to_string())
-                    } else {
-                        // (data, None)
-                        (buff, "".to_string())
-                    }
-                } else {
-                    let sequence = data.clone().to_string();
-                    // (data, None)
-                    (sequence, "".to_string())
-                };
-
-                // load remaining data in buff
-                buff = data.clone().to_string();
-
-                // QR::append(&mut out, &sequence.to_string());
-                let option = Some(sequence.to_string());
-                out.data_stack.push(option);
-
-                // stop when buffer empty
-                if buff.len() == 0 {
-                    end = true;
-                }
-            }
-        } else {
-            QR::data_init(&mut out, 1);
-        }
-        out.total_sequences = out.data_stack.len();
-        out.is_loaded = true;
-        out
-    }
-}
 
 /// A generic QRCode Encoder
-struct  QREncoder {
+#[derive(Debug, Clone)]
+pub struct  QREncoder {
     encoder: QRType,
 }
 
 impl QREncoder {
-    fn new() -> QREncoder {
+    pub fn new() -> QREncoder {
         let encoder = QRType::NoType;
         QREncoder{encoder}
     }
     /// load (String) data into a given QRType with a given max(max_len) length of chunks
-    fn load(& mut self, data: &str, qr_type: QRType, max_len: usize) -> Result<bool, String> {
+    pub fn load_str(&mut self, data: &str, qr_type: QRType, max_len: usize) -> Result<bool, Error> {
         match qr_type {
             Specter(_) => {
                 // if multi => return a SpecterQR
                 if data.len() > max_len {
                 let mut specter_qr = SpecterQR::new();
-                let encoded_data = <SpecterQR as Encode>::from_string(data, max_len);
-                specter_qr.data = encoded_data;
+                let encoded_data = <SpecterQR as Encode>::load_string(&mut specter_qr,data, max_len);
+                specter_qr.data = encoded_data.map_err(|_| Error::EncodingError("Cannot encode specter_qr".to_string()))?;
                 self.encoder = Specter(specter_qr);
                 Ok(true)
-                // else return a QRData
+                // else return a QRDat
                 } else {
                     let mut simple_qr = QRData::new();
-                    QR::append(&mut simple_qr, &data.to_string());
+                    QR::receive(&mut simple_qr, &data.to_string());
                     self.encoder = SimpleQR(simple_qr);
                     Ok(true)
                 }
             }
-            _ => {Err("Type not yet implemented!".to_string())}
+            _ => {Err(Error::NotImplementedError("Type not yet implemented!".to_string()))}
         }
     }
 
+}
+
+impl Encode for QREncoder {
+    fn is_multi(data: &str) -> bool {
+        todo!()
+    }
+
+    fn load_string(&mut self, data: &str, max_len: usize) -> Result<QRData, Error> {
+        match self.encoder {
+            QRType::Descriptor => {
+                let imported_descriptor = Descriptor::from_str(data)
+                    .map_err(|e| Error::ParsingError("Cannot load this string into descriptor".to_string()))?;
+
+                Ok(QRData::new())
+            }
+            _ => { Err(Error::NotImplementedError("".to_string())) }
+        }
+    }
+
+    fn from_psbt(psbt: &Psbt) -> QRType {
+        todo!()
+    }
+
+    fn from_xpub(xpub: &XPub) -> QRType {
+        todo!()
+    }
+
+    fn from_xpriv(xpriv: &XPriv) -> QRType {
+        todo!()
+    }
+
+    fn from_descriptor(descriptor: &Descriptor) -> QRType {
+        todo!()
+    }
 }
 
 
@@ -357,10 +179,11 @@ impl QREncoder {
 
 #[test]
 fn test_specter_iterate_qr() {
-    let qr = SpecterQR::from_string("012345678901234567890123456789012345678", 13);
+    let mut qr = SpecterQR::new();
+    let mut data = qr.load_string("012345678901234567890123456789012345678", 13).unwrap();
 
-    let _s = qr.data_stack.len().to_string();
-    for i in qr.data_stack {
+    let _s = data.data_stack.len().to_string();
+    for i in data.data_stack {
         match i {
             Some(result) => {
                 println!("{result}")
@@ -374,12 +197,13 @@ fn test_specter_iterate_qr() {
 
 #[test]
 fn test_specter_datastack_qr() {
-    let qr = SpecterQR::from_string("012345678901234567890123456789012345678", 13);
+    let mut qr = SpecterQR::new();
+    let mut data = SpecterQR::load_string(&mut qr,"012345678901234567890123456789012345678", 13).unwrap();
 
-    let l = qr.data_stack.len();
+    let l = data.data_stack.len();
     assert_eq!(l, 3);
 
-    let data = qr.data_stack;
+    let data = data.data_stack;
 
     assert_eq!(data[0], Some("0123456789012".to_string()));
     assert_eq!(data[1], Some("3456789012345".to_string()));
@@ -388,10 +212,12 @@ fn test_specter_datastack_qr() {
 
 #[test]
 fn test_specter_next_qr() {
-    let mut qr = SpecterQR::from_string("012345678901234567890123456789012345678", 13);
-    let a = qr.next().unwrap();
-    let b = qr.next().unwrap();
-    let c = qr.next().unwrap();
+    let mut qr = SpecterQR::new();
+    let mut data = SpecterQR::load_string(&mut qr,"012345678901234567890123456789012345678", 13).unwrap();
+    let a = data.next()
+        .unwrap();
+    let b = data.next().unwrap();
+    let c = data.next().unwrap();
 
     assert_eq!(a, "p1of3 0123456789012".to_string());
     assert_eq!(b, "p2of3 3456789012345".to_string());
@@ -416,12 +242,12 @@ fn test_specter_is_multi_false() {
 fn test_append_specter_multi() {
     let mut multi = SpecterQR::new();
 
-    Decode::append(&mut multi, "p0of3 a");
-    Decode::append(&mut multi, "p1of0 a");
-    Decode::append(&mut multi, "p0of0 a");
-    Decode::append(&mut multi, "p1of3 a").unwrap();
-    Decode::append(&mut multi, "p2of3 b").unwrap();
-    Decode::append(&mut multi, "p3of3 c").unwrap();
+    Decode::receive(&mut multi, "p0of3 a");
+    Decode::receive(&mut multi, "p1of0 a");
+    Decode::receive(&mut multi, "p0of0 a");
+    Decode::receive(&mut multi, "p1of3 a").unwrap();
+    Decode::receive(&mut multi, "p2of3 b").unwrap();
+    Decode::receive(&mut multi, "p3of3 c").unwrap();
 
     assert!(multi.is_complete());
     assert_eq!(multi.data.data, "abc".to_string());
@@ -430,5 +256,6 @@ fn test_append_specter_multi() {
 #[test]
 fn qr_encoder_load() {
     let mut qr_encoder = QREncoder::new();
-    qr_encoder.load("213216546842lkljbjkhbvhgv5654", Specter(SpecterQR::new()), 13).unwrap();
+    qr_encoder.load_str("213216546842lkljbjkhbvhgv5654", Specter(SpecterQR::new()), 13).unwrap();
 }
+

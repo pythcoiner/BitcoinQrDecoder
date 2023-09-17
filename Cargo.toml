@@ -7,3 +7,7 @@ edition = "2021"
 
 [dependencies]
 regex = "1.8.3"
+ur = "0.4.0"
+bitcoin = "0.30.1"
+base64 = "0.21.4"
+liana = { git = "https://github.com/wizardsardine/liana", branch = "master", default-features = false, features = ["nonblocking_shutdown"] }
