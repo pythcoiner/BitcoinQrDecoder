@@ -1,4 +1,4 @@
-use crate::{MultiQR, MultiQRElement, QR};
+use crate::MultiQRElement;
 
 /// A Generic container for QRCode data
 #[derive(Debug, Clone)]
@@ -32,10 +32,10 @@ impl QRData {
     }
 }
 
-impl QR for QRData {
+impl  QRData {
     ///  Initialize QRData Container
     ///
-    fn data_init(&mut self, sequences: usize) {
+    pub fn data_init(&mut self, sequences: usize) {
         self.total_sequences = sequences;
         self.sequences_count = 0;
         self.current = sequences;
@@ -44,7 +44,7 @@ impl QR for QRData {
 
     ///  Append data from a single QRCode received without formatting
     ///
-    fn receive(&mut self, data: &String) -> bool {
+    pub fn receive(&mut self, data: &String) -> bool {
         self.data = data.clone();
         self.sequences_count = 1;
         self.total_sequences = 1;
@@ -52,10 +52,8 @@ impl QR for QRData {
         self.is_loaded = true;
         true
     }
-}
 
-impl MultiQR for QRData {
-    fn check_complete(&mut self) {
+    pub fn check_complete(&mut self) {
         let mut fill_sequences: usize = 0;
         for sequence in &self.data_stack {
             if let Some(_result) = sequence {
@@ -68,7 +66,7 @@ impl MultiQR for QRData {
         }
     }
 
-    fn next(&mut self) -> Result<String, String> {
+    pub fn next(&mut self) -> Result<String, String> {
         if self.is_loaded {
             if self.current >= self.total_sequences {
                 self.current = 0;

@@ -3,39 +3,23 @@ extern crate ur;
 use bitcoin::psbt::PartiallySignedTransaction as Psbt;
 use liana::descriptors::LianaDescriptor as Descriptor ;
 use bitcoin::bip32::{ExtendedPubKey as XPub, ExtendedPrivKey as XPriv};
-use crate::{QRType, DataType, QR, MultiQR, Decode, Encode, Error, qr};
+use crate::{OutputType, DataType, Decode, Encode, Error, qr, Encoding};
 use crate::qr::QRData;
 
 pub struct UrData {
     decoder: Option<ur::Decoder>,
     encoder: Option<ur::Encoder>,
-    qr_type: QRType,
+    qr_type: OutputType,
     data_type: DataType,
     max_len: Option<usize>,
 
 }
 
-impl QR for UrData {
+impl Decode for UrData {
     fn data_init(&mut self, sequences: usize) {
         todo!()
     }
 
-    fn receive(&mut self, data: &String) -> bool {
-        todo!()
-    }
-}
-
-impl MultiQR for UrData {
-    fn check_complete(&mut self) {
-        todo!()
-    }
-
-    fn next(&mut self) -> Result<String, String> {
-        todo!()
-    }
-}
-
-impl Decode for UrData {
     fn pattern() -> &'static str {
         todo!()
     }
@@ -52,33 +36,49 @@ impl Decode for UrData {
         todo!()
     }
 
+    fn check_complete(&mut self) {
+        todo!()
+    }
+
     fn result() -> Result<DataType, Error> {
         todo!()
     }
 }
 
 impl Encode for UrData {
+    fn max_len(&mut self) -> Option<usize> {
+        todo!()
+    }
+
     fn is_multi(data: &str) -> bool {
         todo!()
     }
 
-    fn load_string(&mut self, data: &str, max_len: usize) -> Result<qr::QRData, Error> {
+    fn load_string(&mut self, data: &str) -> Result<&mut UrData, Error> {
         todo!()
     }
 
-    fn from_psbt(psbt: &Psbt) -> QRType {
+    fn set_output_type(&mut self, data_type: DataType, encoding: Encoding, max_len: Option<usize>) -> &mut Self {
         todo!()
     }
 
-    fn from_xpub(xpub: &XPub) -> QRType {
+    fn from_psbt(psbt: &Psbt) -> Result<&mut UrData, Error> {
         todo!()
     }
 
-    fn from_xpriv(xpriv: &XPriv) -> QRType {
+    fn from_xpub(xpub: &XPub) -> Result<&mut UrData, Error> {
         todo!()
     }
 
-    fn from_descriptor(descriptor: &Descriptor) -> QRType {
+    fn from_xpriv(xpriv: &XPriv) -> Result<&mut UrData, Error> {
+        todo!()
+    }
+
+    fn from_descriptor(descriptor: &Descriptor) -> Result<&mut UrData, Error> {
+        todo!()
+    }
+
+    fn next(&mut self) -> Option<String> {
         todo!()
     }
 }

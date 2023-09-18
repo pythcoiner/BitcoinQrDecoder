@@ -1,5 +1,5 @@
 use regex::Regex;
-use crate::{DataType, Decode, Encode, Error, MultiQRElement, QR, qr, QRType};
+use crate::{DataType, Decode, Encode, Error, MultiQRElement, qr, OutputType, Encoding};
 use crate::qr::QRData;
 use bitcoin::bip32::{ExtendedPubKey as XPub, ExtendedPrivKey as XPriv};
 use bitcoin::psbt::PartiallySignedTransaction as Psbt;
@@ -19,6 +19,10 @@ impl SpecterQR {
 }
 
 impl Decode for SpecterQR {
+    fn data_init(&mut self, sequences: usize) {
+        todo!()
+    }
+
     fn pattern() -> &'static str {
         r"^p\d+of\d+\s"
     }
@@ -140,25 +144,32 @@ impl Decode for SpecterQR {
         self.data.is_completed = true;
     }
 
+    fn check_complete(&mut self) {
+        todo!()
+    }
+
     fn result() -> Result<DataType, Error> {
         todo!()
     }
 }
 
 impl Encode for SpecterQR {
+    fn max_len(&mut self) -> Option<usize> {
+        todo!()
+    }
+
     fn is_multi(data: &str) -> bool {
         let re: Regex = Regex::new(SpecterQR::pattern())
             .unwrap();
         re.is_match(data)
     }
-    fn load_string(&mut self, data: &str, max_len: usize) -> Result<qr::QRData, Error> {
+    fn load_string(&mut self, data: &str) -> Result<&mut SpecterQR, Error> {
         let mut out = QRData::new();
 
-        out.max_len = Some(max_len);
         out.data = data.to_string();
 
         // if multi
-        if data.len() > max_len {
+        if data.len() > out.max_len.unwrap() {
             let mut end: bool = false;
             let mut buff = data.to_string();
 
@@ -166,8 +177,8 @@ impl Encode for SpecterQR {
             while !end {
                 //if len(data) > max_len : return (chunk, data) else return (data, None)
                 let (sequence, data) = if buff.len() > 0 {
-                    if buff.len() > max_len {
-                        let (sequence, data) = buff.split_at(max_len);
+                    if buff.len() > out.max_len.unwrap() {
+                        let (sequence, data) = buff.split_at(out.max_len.unwrap());
                         // (chunk, data)
                         (sequence.to_owned().to_string(), data.to_owned().to_string())
                     } else {
@@ -193,26 +204,34 @@ impl Encode for SpecterQR {
                 }
             }
         } else {
-            QR::data_init(&mut out, 1);
+            out.data_init( 1);
         }
         out.total_sequences = out.data_stack.len();
         out.is_loaded = true;
-        Ok(out)
+        Ok(self)
     }
 
-    fn from_psbt(psbt: &Psbt) -> QRType {
+    fn set_output_type(&mut self, data_type: DataType, encoding: Encoding, max_len: Option<usize>) -> &mut Self {
         todo!()
     }
 
-    fn from_xpub(xpub: &XPub) -> QRType {
+    fn from_psbt(psbt: &Psbt) -> Result<&mut SpecterQR, Error> {
         todo!()
     }
 
-    fn from_xpriv(xpriv: &XPriv) -> QRType {
+    fn from_xpub(xpub: &XPub) -> Result<&mut SpecterQR, Error> {
         todo!()
     }
 
-    fn from_descriptor(descriptor: &Descriptor) -> QRType {
+    fn from_xpriv(xpriv: &XPriv) -> Result<&mut SpecterQR, Error> {
+        todo!()
+    }
+
+    fn from_descriptor(descriptor: &Descriptor) -> Result<&mut SpecterQR, Error> {
+        todo!()
+    }
+
+    fn next(&mut self) -> Option<String> {
         todo!()
     }
 }
