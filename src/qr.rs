@@ -1,7 +1,7 @@
 use crate::MultiQRElement;
 
 /// A Generic container for QRCode data
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct QRData {
     pub data: String,
     pub total_sequences: usize,
@@ -32,7 +32,7 @@ impl QRData {
     }
 }
 
-impl  QRData {
+impl QRData {
     ///  Initialize QRData Container
     ///
     pub fn data_init(&mut self, sequences: usize) {

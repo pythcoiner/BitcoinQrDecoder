@@ -1,12 +1,12 @@
-use regex::Regex;
-use crate::{DataType, Decode, Encode, Error, MultiQRElement, qr, OutputType, Encoding};
 use crate::qr::QRData;
-use bitcoin::bip32::{ExtendedPubKey as XPub, ExtendedPrivKey as XPriv};
+use crate::{qr, DataType, Decode, Encode, Encoding, Error, MultiQRElement, OutputType};
+use bitcoin::bip32::{ExtendedPrivKey as XPriv, ExtendedPubKey as XPub};
 use bitcoin::psbt::PartiallySignedTransaction as Psbt;
-use liana::descriptors::LianaDescriptor as Descriptor ;
+use liana::descriptors::LianaDescriptor as Descriptor;
+use regex::Regex;
 
 /// A decoder for Specter MultiQR
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SpecterQR {
     pub data: QRData,
 }
@@ -16,49 +16,64 @@ impl SpecterQR {
         let data = QRData::new();
         SpecterQR { data }
     }
+    pub fn is_multi(data: &str) -> bool {
+        let re: Regex = Regex::new(SpecterQR::pattern()).unwrap();
+        re.is_match(data)
+    }
+    pub fn data_init(&mut self, sequences: usize) {
+        todo!()
+    }
+    fn process(&mut self) {
+        let mut buffer = String::new();
+        // for each element of data chunks
+        for i in &self.data.chunks {
+            match i {
+                Some(result) => {
+                    buffer += &result.data;
+                }
+                None => {
+                    self.data.is_completed = false;
+                    return;
+                }
+            }
+        }
+        self.data.data = buffer;
+        self.data.is_completed = true;
+    }
+
+    fn check_complete(&mut self) {
+        todo!()
+    }
 }
 
 impl Decode for SpecterQR {
-    fn data_init(&mut self, sequences: usize) {
-        todo!()
-    }
-
     fn pattern() -> &'static str {
         r"^p\d+of\d+\s"
     }
+
     fn is_complete(&self) -> bool {
         self.data.is_completed
     }
-    fn receive(&mut self, raw_data: &str) -> Result<bool, String> {
+
+    fn receive(&mut self, raw_data: &str) -> Result<bool, Error> {
         if SpecterQR::is_multi(raw_data) {
             // header pattern
-            let regex = Regex::new(SpecterQR::pattern())
-                .unwrap();
+            let regex = Regex::new(SpecterQR::pattern()).unwrap();
 
             // fetch data
-            let data = regex
-                .replace_all(raw_data, "".to_string())
-                .to_string();
+            let data = regex.replace_all(raw_data, "".to_string()).to_string();
 
             //fetch header
-            let mut header: String = ""
-                .to_string();
-            if let Some(found) = regex
-                .find(raw_data) {
-                let found = found
-                    .as_str()
-                    .to_string();
+            let mut header: String = "".to_string();
+            if let Some(found) = regex.find(raw_data) {
+                let found = found.as_str().to_string();
                 header = found;
             };
-            let parts: Vec<&str> = header
-                .split("of")
-                .collect();
+            let parts: Vec<&str> = header.split("of").collect();
 
             // index
             let index: usize;
-            let a = parts[0]
-                .replace("p", "")
-                .parse::<usize>();
+            let a = parts[0].replace("p", "").parse::<usize>();
             match a {
                 Ok(value) => {
                     if value > 0 {
@@ -74,15 +89,13 @@ impl Decode for SpecterQR {
 
             // total
             let total: usize;
-            let b = parts[1]
-                .trim()
-                .parse::<usize>();
+            let b = parts[1].trim().parse::<usize>();
             match b {
                 Ok(value) => {
                     if value > 1 {
                         total = value;
                     } else {
-                        return Err("Total might be > 1!".to_string())
+                        return Err("Total might be > 1!".to_string());
                     }
                 }
                 Err(e) => {
@@ -126,29 +139,8 @@ impl Decode for SpecterQR {
             Err("data is not MultiQR type!".to_string())
         }
     }
-    fn process(&mut self) {
-        let mut buffer = String::new();
-        // for each element of data chunks
-        for i in &self.data.chunks {
-            match i {
-                Some(result) => {
-                    buffer += &result.data;
-                }
-                None => {
-                    self.data.is_completed = false;
-                    return;
-                }
-            }
-        }
-        self.data.data = buffer;
-        self.data.is_completed = true;
-    }
 
-    fn check_complete(&mut self) {
-        todo!()
-    }
-
-    fn result() -> Result<DataType, Error> {
+    fn result(&self) -> Result<DataType, Error> {
         todo!()
     }
 }
@@ -158,12 +150,11 @@ impl Encode for SpecterQR {
         todo!()
     }
 
-    fn is_multi(data: &str) -> bool {
-        let re: Regex = Regex::new(SpecterQR::pattern())
-            .unwrap();
-        re.is_match(data)
+    fn from_liana_descriptor(descriptor: &Descriptor) -> Result<Box<Self>, Error> {
+        todo!()
     }
-    fn load_string(&mut self, data: &str) -> Result<&mut SpecterQR, Error> {
+
+    fn load_string(&mut self, data: &str) -> Result<Box<Self>, Error> {
         let mut out = QRData::new();
 
         out.data = data.to_string();
@@ -204,30 +195,31 @@ impl Encode for SpecterQR {
                 }
             }
         } else {
-            out.data_init( 1);
+            out.data_init(1);
         }
         out.total_sequences = out.data_stack.len();
         out.is_loaded = true;
         Ok(self)
     }
 
-    fn set_output_type(&mut self, data_type: DataType, encoding: Encoding, max_len: Option<usize>) -> &mut Self {
+    fn set_output_type(
+        &mut self,
+        data_type: DataType,
+        encoding: Encoding,
+        max_len: Option<usize>,
+    ) -> &mut Self {
         todo!()
     }
 
-    fn from_psbt(psbt: &Psbt) -> Result<&mut SpecterQR, Error> {
+    fn from_psbt(psbt: &Psbt) -> Result<Box<Self>, Error> {
         todo!()
     }
 
-    fn from_xpub(xpub: &XPub) -> Result<&mut SpecterQR, Error> {
+    fn from_xpub(xpub: &XPub) -> Result<Box<Self>, Error> {
         todo!()
     }
 
-    fn from_xpriv(xpriv: &XPriv) -> Result<&mut SpecterQR, Error> {
-        todo!()
-    }
-
-    fn from_descriptor(descriptor: &Descriptor) -> Result<&mut SpecterQR, Error> {
+    fn from_xpriv(xpriv: &XPriv) -> Result<Box<Self>, Error> {
         todo!()
     }
 

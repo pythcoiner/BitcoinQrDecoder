@@ -6,15 +6,14 @@ pub mod qr;
 pub mod specter;
 pub mod ur;
 
-use std::str::FromStr;
-use crate::OutputType::*;
 use crate::qr::*;
 use crate::specter::SpecterQR;
-use bitcoin::psbt::PartiallySignedTransaction as Psbt;
-use bitcoin::bip32::{ExtendedPubKey as XPub, ExtendedPrivKey as XPriv};
-use liana::descriptors::LianaDescriptor as Descriptor ;
 use crate::Error::ParsingError;
-
+use crate::OutputType::*;
+use bitcoin::bip32::{ExtendedPrivKey as XPriv, ExtendedPubKey as XPub};
+use bitcoin::psbt::PartiallySignedTransaction as Psbt;
+use liana::descriptors::LianaDescriptor;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub enum Error {
@@ -24,9 +23,8 @@ pub enum Error {
     NotImplementedError(String),
 }
 
-
 /// Struct holding a chunk of MultiQR
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MultiQRElement {
     data: String,
     index: usize,
@@ -34,12 +32,15 @@ pub struct MultiQRElement {
 }
 
 /// Data Type
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DataType {
+    Address(),
     Psbt(Option<Psbt>),
     Xpub(Option<XPub>),
     Xpriv(Option<XPriv>),
-    Descriptor(Option<Descriptor>),
+    LianaDescriptor(Option<LianaDescriptor>),
+    Descriptor(),
+    NoType(Option<String>),
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +52,7 @@ pub enum Encoding {
 }
 
 /// QR Type
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OutputType {
     /// Raw QRCode (no data typing)
     SimpleQR(QRData),
@@ -61,12 +62,14 @@ pub enum OutputType {
     Xpriv,
     /// Raw Xpub
     Xpub,
-    ///Raw descriptor
+    ///Raw Liana descriptor
+    LianaDescriptor,
+    ///Raw Bitcoin descriptor
     Descriptor,
     /// Specter animated QRCode (no data typing)
     Specter(SpecterQR),
     /// Specter animated PSBT
-    SpecterPsbt(),
+    SpecterPsbt,
     /// Specter animated Descriptor
     SpecterDescriptor,
     /// UR encoded QRCode (no data typing)
@@ -81,47 +84,45 @@ pub enum OutputType {
     UrXpriv,
     /// UR encoded as crypto-output QRCode
     UrDescriptor,
+    /// UR encoded as crypto-address QRCode
+    UrAddress,
     /// Encoding not selected
     NoType,
 }
 
-
 /// Trait for decoders
 pub trait Decode {
-    /// Decoder initialization
-    fn data_init(&mut self, sequences: usize);
     /// return the pattern(regex) used for detect each type (decoder)
     fn pattern() -> &'static str;
     /// return true if decoding process ended (decoder)
     fn is_complete(&self) -> bool;
     /// load data chunk (decoder)
-    fn receive(&mut self, data: &str) -> Result<bool, String>;
-    /// decoding process (decoder)
-    fn process(&mut self);
-    /// check if decoding complete
-    fn check_complete(&mut self);
+    fn receive(&mut self, data: &str) -> Result<bool, Error>;
     /// result of decoding
-    fn result() -> Result<DataType, Error>;
-
+    fn result(&self) -> Result<DataType, Error>;
 }
 
 /// Trait for encoders
 pub trait Encode {
     fn max_len(&mut self) -> Option<usize>;
-    /// return whether the string is a multiQR or not (encoder)
-    fn is_multi(data: &str) -> bool;
+
+    fn from_liana_descriptor(descriptor: &LianaDescriptor) -> Result<Box<Self>, Error>;
+
     /// encode data from string (encoder)
-    fn load_string(&mut self, data: &str) -> Result<&mut Self, Error>;
+    fn load_string(&mut self, data: &str) -> Result<Box<Self>, Error>;
 
-    fn set_output_type(&mut self, data_type: DataType, encoding: Encoding, max_len: Option<usize>) -> &mut Self;
+    fn set_output_type(
+        &mut self,
+        data_type: DataType,
+        encoding: Encoding,
+        max_len: Option<usize>,
+    ) -> &mut Self;
 
-    fn from_psbt(psbt: &Psbt) -> Result<&mut Self, Error>;
+    fn from_psbt(psbt: &Psbt) -> Result<Box<Self>, Error>;
 
-    fn from_xpub(xpub: &XPub) -> Result<&mut Self, Error>;
+    fn from_xpub(xpub: &XPub) -> Result<Box<Self>, Error>;
 
-    fn from_xpriv(xpriv: &XPriv) -> Result<&mut Self, Error>;
-
-    fn from_descriptor(descriptor: &Descriptor) -> Result<&mut Self, Error>;
+    fn from_xpriv(xpriv: &XPriv) -> Result<Box<Self>, Error>;
 
     fn next(&mut self) -> Option<String>;
 
@@ -129,10 +130,9 @@ pub trait Encode {
     // TODO: add looping iterator?
 }
 
-
 /// A generic QRCode Encoder
 #[derive(Debug, Clone)]
-pub struct  QREncoder {
+pub struct QREncoder {
     encoder: OutputType,
 }
 
@@ -148,40 +148,96 @@ impl Encode for QREncoder {
         todo!()
     }
 
-    fn is_multi(data: &str) -> bool {
+    fn from_liana_descriptor(descriptor: &LianaDescriptor) -> Result<Box<Self>, Error> {
         todo!()
     }
 
-    fn load_string(&mut self, data: &str) -> Result<&mut Self, Error> {
+    fn load_string(&mut self, data: &str) -> Result<Box<Self>, Error> {
         match self.encoder {
-            OutputType::Descriptor => {
-                // Import descriptor to sanity check
-                let imported_descriptor = Descriptor::from_str(data)
-                    .map_err(|e| Error::ParsingError("Cannot load this string into descriptor".to_string()))?;
-
-                Ok(self)
+            OutputType::NoType => Err(Error::EncodingError(
+                "An output type should be define prior to load!".to_string(),
+            )),
+            OutputType::LianaDescriptor => {
+                // Import descriptor
+                let imported_descriptor = LianaDescriptor::from_str(data).map_err(|e| {
+                    Error::ParsingError("Cannot load this string into Liana descriptor".to_string())
+                })?;
+                let out = QREncoder::from_liana_descriptor(&imported_descriptor)?;
+                Ok(out)
             }
-            _ => { Ok(self) }
+            OutputType::Specter(_) => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::SpecterDescriptor => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::SpecterPsbt => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+
+            OutputType::SimpleQR(_) => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+
+            OutputType::Ur => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::UrBytes => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::UrDescriptor => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::UrPsbt => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::UrXpriv => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::UrXpub => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+
+            OutputType::Psbt => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::Xpriv => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::Xpub => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::Descriptor => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+            OutputType::LianaDescriptor => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
+
+            _ => Err(Error::NotImplementedError(
+                "type not yet implemented!".to_string(),
+            )),
         }
     }
 
-    fn set_output_type(&mut self, data_type: DataType, encoding: Encoding, max_len: Option<usize>) -> &mut Self {
+    fn set_output_type(
+        &mut self,
+        data_type: DataType,
+        encoding: Encoding,
+        max_len: Option<usize>,
+    ) -> &mut Self {
         todo!()
     }
 
-    fn from_psbt(psbt: &Psbt) -> Result<&mut QREncoder, Error> {
+    fn from_psbt(psbt: &Psbt) -> Result<Box<Self>, Error> {
         todo!()
     }
 
-    fn from_xpub(xpub: &XPub) -> Result<&mut QREncoder, Error> {
+    fn from_xpub(xpub: &XPub) -> Result<Box<Self>, Error> {
         todo!()
     }
 
-    fn from_xpriv(xpriv: &XPriv) -> Result<&mut QREncoder, Error> {
-        todo!()
-    }
-
-    fn from_descriptor(descriptor: &Descriptor) -> Result<&mut QREncoder, Error> {
+    fn from_xpriv(xpriv: &XPriv) -> Result<Box<Self>, Error> {
         todo!()
     }
 
@@ -190,6 +246,35 @@ impl Encode for QREncoder {
     }
 }
 
+impl Decode for QREncoder {
+    fn data_init(&mut self, sequences: usize) {
+        todo!()
+    }
+
+    fn pattern() -> &'static str {
+        todo!()
+    }
+
+    fn is_complete(&self) -> bool {
+        todo!()
+    }
+
+    fn receive(&mut self, data: &str) -> Result<bool, String> {
+        todo!()
+    }
+
+    fn process(&mut self) {
+        todo!()
+    }
+
+    fn check_complete(&mut self) {
+        todo!()
+    }
+
+    fn result() -> Result<DataType, Error> {
+        todo!()
+    }
+}
 
 // #[cfg(test)]
 //
@@ -274,4 +359,3 @@ impl Encode for QREncoder {
 //     let mut qr_encoder = QREncoder::new();
 //     qr_encoder.load_str("213216546842lkljbjkhbvhgv5654", Specter(SpecterQR::new()), 13).unwrap();
 // }
-
